@@ -1,0 +1,7 @@
+{
+  "name": "Shelly Plug LED Ring",
+  "content_in_root": false,
+  "zip_release": false,
+  "render_readme": true,
+  "homeassistant": "2024.1.0"
+}

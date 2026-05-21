@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Please select one of your existing Shelly plugs from the dropdown menu below to control its LED ring. Note: The device must already be set up through the official Shelly integration before it will appear here.",
+        "data": {
+          "shelly_device": "Select Shelly Plug:"
+        }
+      }
+    },
+    "abort": {
+      "no_shelly_plugs_found": "No compatible Shelly Plugs found, or all of your existing plugs have already been configured.",
+      "already_configured": "This Shelly Plug LED integration is already configured for this device."
+    }
+  }
+}
