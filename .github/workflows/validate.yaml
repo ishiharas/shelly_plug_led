@@ -1,0 +1,33 @@
+name: Validation
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *" # Runs every midnight to check against future HA breaking changes
+  workflow_dispatch: # Allows you to run it manually from the UI
+
+permissions: {}
+
+jobs:
+  validate-hacs:
+    name: HACS Validation
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Checkout code
+        uses: "actions/checkout@v4"
+
+      - name: HACS validation
+        uses: "hacs/action@main"
+        with:
+          category: "integration"
+
+  validate-hassfest:
+    name: Hassfest Validation
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Checkout code
+        uses: "actions/checkout@v4"
+
+      - name: Home Assistant Hassfest validation
+        uses: "home-assistant/actions/hassfest@master"
