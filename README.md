@@ -9,6 +9,10 @@ This integration interacts with the LED configuration engine. It allows you to
 
 **without affecting the operational on/off power state of the actual smart plug relay**.
 
+<p align="center">
+  <img src="images/banner.png" alt="Alt text" width="468">
+</p>
+
 ## Prerequisites
 1. You must have your Shelly plugs already configured and active in Home Assistant via the **official built-in Shelly integration**.
 2. Your hardware must be Generation 2 or Generation 3 local RPC devices (such as the standard Shelly Plus Plug S or newer variants).
