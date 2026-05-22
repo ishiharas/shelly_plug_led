@@ -1,9 +1,10 @@
 {
   "domain": "shelly_plug_led",
   "name": "Shelly Plug LED Ring",
-  "codeowners": [],
+  "codeowners": ["@ishiharas"],
   "config_flow": true,
   "iot_class": "local_polling",
   "version": "1.0.0",
+  "documentation": "https://github.com/ishiharas/shelly_plug_led",
   "requirements": []
 }

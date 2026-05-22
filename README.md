@@ -10,7 +10,7 @@ This integration interacts with the LED configuration engine. It allows you to
 **without affecting the operational on/off power state of the actual smart plug relay**.
 
 <p align="center">
-  <img src="images/banner.png" alt="Alt text" width="468">
+  <img src="brand/banner.png" alt="Alt text" width="468">
 </p>
 
 ## Prerequisites
