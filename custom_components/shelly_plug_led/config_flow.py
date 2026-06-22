@@ -2,13 +2,19 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .api import ShellyAuthError, ShellyRpcClient, get_shelly_credentials
 
 DOMAIN = "shelly_plug_led"
 
 class ShellyPlugLedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Shelly Plug LED Ring with device & area filtering."""
 
-    VERSION = 1
+    VERSION = 2
+
+    def __init__(self):
+        self._reauth_entry = None
 
     async def async_step_user(self, user_input=None):
         """Handle the initial user setup step."""
@@ -69,12 +75,16 @@ class ShellyPlugLedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(f"shelly_led_{selected_host}")
             self._abort_if_unique_id_configured()
 
+            username, password = get_shelly_credentials(self.hass, selected_host)
+
             return self.async_create_entry(
                 title=f"{device_info['name']} LED Ring",
                 data={
                     "host": selected_host,
                     "name": device_info["name"],
-                    "identifiers": device_info["identifiers"]
+                    "identifiers": device_info["identifiers"],
+                    "username": username,
+                    "password": password,
                 }
             )
 
@@ -86,4 +96,69 @@ class ShellyPlugLedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required("shelly_device"): vol.In(dropdown_options)
             }),
             errors=errors,
+        )
+
+    async def async_step_reauth(self, entry_data):
+        """Handle reauth when the device rejects our stored credentials."""
+        self._reauth_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        host = self._reauth_entry.data["host"]
+
+        # Try to silently re-pull the current password from the official shelly entry.
+        username, password = get_shelly_credentials(self.hass, host)
+        if password:
+            self.hass.config_entries.async_update_entry(
+                self._reauth_entry,
+                data={
+                    **self._reauth_entry.data,
+                    "username": username or "admin",
+                    "password": password,
+                },
+            )
+            await self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
+            return self.async_abort(reason="reauth_successful")
+
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        """Prompt for a password when it cannot be sourced automatically."""
+        errors = {}
+        host = self._reauth_entry.data["host"]
+
+        if user_input is not None:
+            username = user_input.get("username") or "admin"
+            password = user_input["password"]
+
+            client = ShellyRpcClient(
+                async_get_clientsession(self.hass), host, username, password
+            )
+            try:
+                await client.get_config()
+            except ShellyAuthError:
+                errors["base"] = "invalid_auth"
+            except Exception:  # noqa: BLE001
+                errors["base"] = "cannot_connect"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    self._reauth_entry,
+                    data={
+                        **self._reauth_entry.data,
+                        "username": username,
+                        "password": password,
+                    },
+                )
+                await self.hass.config_entries.async_reload(
+                    self._reauth_entry.entry_id
+                )
+                return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({
+                vol.Optional("username", default="admin"): str,
+                vol.Required("password"): str,
+            }),
+            errors=errors,
+            description_placeholders={"host": host},
         )

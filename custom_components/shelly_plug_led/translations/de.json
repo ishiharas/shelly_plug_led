@@ -6,11 +6,24 @@
         "data": {
           "shelly_device": "Shelly Plug auswählen:"
         }
+      },
+      "reauth_confirm": {
+        "title": "Shelly Plug LED Authentifizierung",
+        "description": "Die Authentifizierung für den Shelly Plug unter {host} ist fehlgeschlagen. Geben Sie das Gerätepasswort ein, um die Verbindung wiederherzustellen. Der Benutzername ist normalerweise \"admin\".",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
       }
+    },
+    "error": {
+      "invalid_auth": "Ungültige Authentifizierung. Überprüfen Sie das Passwort und versuchen Sie es erneut.",
+      "cannot_connect": "Verbindung zum Gerät fehlgeschlagen."
     },
     "abort": {
       "no_shelly_plugs_found": "Keine kompatiblen Shelly Plugs gefunden oder alle vorhandenen Plugs wurden bereits konfiguriert.",
-      "already_configured": "Diese Shelly Plug LED-Integration ist für dieses Gerät bereits konfiguriert."
+      "already_configured": "Diese Shelly Plug LED-Integration ist für dieses Gerät bereits konfiguriert.",
+      "reauth_successful": "Die erneute Authentifizierung war erfolgreich."
     }
   }
 }
