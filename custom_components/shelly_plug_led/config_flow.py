@@ -107,7 +107,7 @@ class ShellyPlugLedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Try to silently re-pull the current password from the official shelly entry.
         username, password = get_shelly_credentials(self.hass, host)
-        if password:
+        if password and password != self._reauth_entry.data.get("password"):
             self.hass.config_entries.async_update_entry(
                 self._reauth_entry,
                 data={
