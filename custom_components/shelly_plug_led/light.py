@@ -7,7 +7,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .api import ShellyAuthError
 
 DOMAIN = "shelly_plug_led"
 _LOGGER = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities([
         ShellyPlugLedRing(
             coordinator=data["coordinator"],
+            client=data["client"],
             host=data["host"],
             entry_id=entry.entry_id,
             identifiers=entry.data.get("identifiers", [])
@@ -31,10 +33,10 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
     _attr_color_mode = ColorMode.RGB
     _attr_supported_color_modes = {ColorMode.RGB}
 
-    def __init__(self, coordinator, host, entry_id, identifiers):
+    def __init__(self, coordinator, client, host, entry_id, identifiers):
         super().__init__(coordinator)
+        self._client = client
         self._host = host
-        self._session = None
         self._attr_unique_id = f"{entry_id}_led_ring"
         self._attr_name = "LED Ring"
         self._identifiers = identifiers
@@ -85,13 +87,15 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
         super()._handle_coordinator_update()
 
     async def _send_rpc(self, payload: dict):
-        if not self._session:
-            self._session = async_get_clientsession(self.hass)
         try:
-            await self._session.post(f"http://{self._host}/rpc/PLUGS_UI.SetConfig", json=payload, timeout=5)
+            await self._client.set_config(payload["config"])
+        except ShellyAuthError:
+            # Let the coordinator surface the reauth flow on its next poll.
+            await self.coordinator.async_request_refresh()
+            return
         except Exception as err:
             _LOGGER.error("Error communicating with Shelly LED Ring at %s: %s", self._host, err)
-        
+
         await asyncio.sleep(1.5)
         await self.coordinator.async_request_refresh()
 
