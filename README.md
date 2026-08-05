@@ -11,7 +11,9 @@
 A custom Home Assistant integration that turns the built-in RGB LED(s) of your **Shelly Plug S (Gen2 / Gen3)** or **Shelly Power Strip (Gen4)** devices into independent, fully controllable smart light entities — **without affecting the operational on/off power state of the actual smart plug/outlet relay(s)**.
 
 <p align="center">
-  <img src="custom_components/shelly_plug_led/brand/banner.png" alt="Shelly Plug LED Ring banner" width="468">
+  <img src="screenshots/controls.png" alt="LED Ring On Color and Off Color toggles on the device's control card" width="380">
+  &nbsp;&nbsp;
+  <img src="screenshots/off-color-picker.png" alt="Color picker for LED Ring Off Color, set to green" width="260">
 </p>
 
 ---
