@@ -2,14 +2,14 @@
   "config": {
     "step": {
       "user": {
-        "description": "Bitte wählen Sie einen Ihrer vorhandenen Shelly Plugs aus dem Dropdown-Menü aus, um dessen LED-Ring zu steuern. Das Gerät muss vorab über die offizielle Shelly-Integration eingerichtet worden sein, damit es hier zur Auswahl steht.",
+        "description": "Bitte wählen Sie einen Ihrer vorhandenen Shelly Plugs oder Steckerleisten aus dem Dropdown-Menü aus, um dessen/deren LED(s) zu steuern. Das Gerät muss vorab über die offizielle Shelly-Integration eingerichtet worden sein, damit es hier zur Auswahl steht.",
         "data": {
-          "shelly_device": "Shelly Plug auswählen:"
+          "shelly_device": "Shelly-Gerät auswählen:"
         }
       },
       "reauth_confirm": {
-        "title": "Shelly Plug LED Authentifizierung",
-        "description": "Die Authentifizierung für den Shelly Plug unter {host} ist fehlgeschlagen. Geben Sie das Gerätepasswort ein, um die Verbindung wiederherzustellen. Der Benutzername ist normalerweise \"admin\".",
+        "title": "Shelly LED Authentifizierung",
+        "description": "Die Authentifizierung für das Shelly-Gerät unter {host} ist fehlgeschlagen. Geben Sie das Gerätepasswort ein, um die Verbindung wiederherzustellen. Der Benutzername ist normalerweise \"admin\".",
         "data": {
           "username": "Benutzername",
           "password": "Passwort"
@@ -21,8 +21,8 @@
       "cannot_connect": "Verbindung zum Gerät fehlgeschlagen."
     },
     "abort": {
-      "no_shelly_plugs_found": "Keine kompatiblen Shelly Plugs gefunden oder alle vorhandenen Plugs wurden bereits konfiguriert.",
-      "already_configured": "Diese Shelly Plug LED-Integration ist für dieses Gerät bereits konfiguriert.",
+      "no_shelly_plugs_found": "Keine kompatiblen Shelly Plugs oder Steckerleisten gefunden, oder alle vorhandenen Geräte wurden bereits konfiguriert.",
+      "already_configured": "Diese Shelly LED-Integration ist für dieses Gerät bereits konfiguriert.",
       "reauth_successful": "Die erneute Authentifizierung war erfolgreich."
     }
   }

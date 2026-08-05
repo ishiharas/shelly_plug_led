@@ -42,9 +42,12 @@ class ShellyPlugLedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 
             device = entry_devices[0]
             
-            # Filter: Only show devices that contain "plug" in their model type
+            # Filter: only show devices whose LED subsystem we know how to
+            # drive - single-outlet plugs (PLUGS_UI) and multi-outlet power
+            # strips (POWERSTRIP_UI, e.g. "Shelly Power Strip 4 Gen4").
             model = device.model or ""
-            if "plug" not in model.lower():
+            model_lower = model.lower()
+            if not any(keyword in model_lower for keyword in ("plug", "power strip", "powerstrip")):
                 continue
                 
             # Discover which room the plug is currently assigned to

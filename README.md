@@ -1,21 +1,25 @@
 # Shelly Plug LED Ring Integration for Home Assistant
 
-A custom Home Assistant integration that turns the built-in RGB LED ring of your **Shelly Plug S (Gen2 / Gen3)** devices into an independent, fully controllable smart light entity. 
+A custom Home Assistant integration that turns the built-in RGB LED(s) of your **Shelly Plug S (Gen2 / Gen3)** or **Shelly Power Strip (Gen4)** devices into independent, fully controllable smart light entities.
 
 This integration interacts with the LED configuration engine. It allows you to 
 - change colors
 - apply dimming levels
-- toggle the ring on and off 
+- toggle the LED(s) on and off 
 
-**without affecting the operational on/off power state of the actual smart plug relay**.
+**without affecting the operational on/off power state of the actual smart plug/outlet relay(s)**.
 
 <p align="center">
   <img src="custom_components/shelly_plug_led/brand/banner.png" alt="Alt text" width="468">
 </p>
 
 ## Prerequisites
-1. You must have your Shelly plugs already configured and active in Home Assistant via the **official built-in Shelly integration**.
-2. Your hardware must be Generation 2 or Generation 3 local RPC devices (such as the standard Shelly Plus Plug S or newer variants).
+1. You must have your Shelly plug(s) or power strip already configured and active in Home Assistant via the **official built-in Shelly integration**.
+2. Your hardware must be a Generation 2/3 local RPC plug (such as the standard Shelly Plus Plug S or newer variants) or a Generation 4 Shelly Power Strip.
+
+## Multi-outlet devices (Shelly Power Strip)
+
+On a Power Strip, one `LED Outlet N` light entity is created per physical outlet (`switch:0`..`switch:3`), each with its own independently controllable color and brightness. There's a firmware limitation to be aware of: the LED **mode** (off / power-tracking / static-color) is a single setting shared by all outlets, not per-outlet - so turning any one outlet's LED off switches the whole strip's LED mode off, and all outlet LEDs will show as off. Only the *color* is independent per outlet while the strip is in "switch" mode. The "Reset LEDs to Default" button likewise resets the whole device, not a single outlet.
 
 ---
 

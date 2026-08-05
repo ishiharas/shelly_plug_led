@@ -2,14 +2,14 @@
   "config": {
     "step": {
       "user": {
-        "description": "Please select one of your existing Shelly plugs from the dropdown menu below to control its LED ring. Note: The device must already be set up through the official Shelly integration before it will appear here.",
+        "description": "Please select one of your existing Shelly plugs or power strips from the dropdown menu below to control its LED(s). Note: The device must already be set up through the official Shelly integration before it will appear here.",
         "data": {
-          "shelly_device": "Select Shelly Plug:"
+          "shelly_device": "Select Shelly device:"
         }
       },
       "reauth_confirm": {
-        "title": "Shelly Plug LED authentication",
-        "description": "Authentication failed for the Shelly Plug at {host}. Enter the device password to reconnect. The username is usually \"admin\".",
+        "title": "Shelly LED authentication",
+        "description": "Authentication failed for the Shelly device at {host}. Enter the device password to reconnect. The username is usually \"admin\".",
         "data": {
           "username": "Username",
           "password": "Password"
@@ -21,8 +21,8 @@
       "cannot_connect": "Failed to connect to the device."
     },
     "abort": {
-      "no_shelly_plugs_found": "No compatible Shelly Plugs found, or all of your existing plugs have already been configured.",
-      "already_configured": "This Shelly Plug LED integration is already configured for this device.",
+      "no_shelly_plugs_found": "No compatible Shelly plugs or power strips found, or all of your existing devices have already been configured.",
+      "already_configured": "This Shelly LED integration is already configured for this device.",
       "reauth_successful": "Re-authentication was successful."
     }
   }

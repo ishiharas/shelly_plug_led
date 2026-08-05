@@ -26,6 +26,13 @@ SHELLY_DOMAIN = "shelly"
 DEFAULT_USERNAME = "admin"
 TIMEOUT = 5
 
+# RPC components that expose LED configuration, tried in this order until one
+# answers. ``PLUGS_UI`` covers single-outlet devices (Shelly Plug S Gen2/Gen3,
+# ...); ``POWERSTRIP_UI`` covers multi-outlet devices (Shelly Power Strip
+# Gen4, with switch:0..switch:3). Both share the same ``leds.colors`` /
+# ``leds.mode`` config shape, just keyed by a different set of RPC methods.
+LED_UI_COMPONENTS = ("PLUGS_UI", "POWERSTRIP_UI")
+
 
 class ShellyAuthError(Exception):
     """Raised when the device requires auth we cannot satisfy (401, no/invalid creds)."""
@@ -81,6 +88,7 @@ class ShellyRpcClient:
         self._username = username or DEFAULT_USERNAME
         self._password = password
         self._url = f"http://{host}/rpc"
+        self._ui_component: str | None = None
 
     def set_credentials(self, username: str | None, password: str | None) -> None:
         """Update credentials at runtime without rebuilding the client."""
@@ -152,10 +160,31 @@ class ShellyRpcClient:
             return await self._handle(res)
 
     async def get_config(self) -> dict:
-        return await self.call("PLUGS_UI.GetConfig")
+        """Fetch the LED config, auto-detecting which RPC component the device exposes.
+
+        Probes ``LED_UI_COMPONENTS`` in order the first time and remembers the
+        one that answered, so later calls (and ``set_config``) go straight to it.
+        """
+        if self._ui_component:
+            return await self.call(f"{self._ui_component}.GetConfig")
+
+        last_err: Exception | None = None
+        for component in LED_UI_COMPONENTS:
+            try:
+                result = await self.call(f"{component}.GetConfig")
+            except ShellyAuthError:
+                raise  # Conclusive - not a "wrong component" signal.
+            except Exception as err:  # noqa: BLE001 - probing; any failure means "try next"
+                last_err = err
+                continue
+            self._ui_component = component
+            return result
+        raise last_err or RuntimeError("Device exposes no supported LED UI component")
 
     async def set_config(self, config: dict) -> dict:
-        return await self.call("PLUGS_UI.SetConfig", {"config": config})
+        if not self._ui_component:
+            await self.get_config()  # Probe for the right component first.
+        return await self.call(f"{self._ui_component}.SetConfig", {"config": config})
 
 
 def find_shelly_entry(hass, host: str):

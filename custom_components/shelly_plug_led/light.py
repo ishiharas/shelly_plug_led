@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from typing import Any
 
 from homeassistant.components.light import ColorMode, LightEntity
@@ -13,32 +14,82 @@ from .api import ShellyAuthError
 DOMAIN = "shelly_plug_led"
 _LOGGER = logging.getLogger(__name__)
 
+# Matches the per-outlet keys Shelly uses inside ``leds.colors``
+# (e.g. "switch:0" .. "switch:3" on a Power Strip). Other keys such as
+# "power" (the power-tracking-mode brightness) are ignored.
+_SWITCH_KEY_RE = re.compile(r"^switch:(\d+)$")
+
+
+def _discover_switch_keys(coordinator_data: dict | None) -> list[str]:
+    """Return the sorted ``switch:N`` keys present in the LED color config."""
+    colors = (coordinator_data or {}).get("leds", {}).get("colors", {})
+    keys = [key for key in colors if _SWITCH_KEY_RE.match(key)]
+    keys.sort(key=lambda key: int(_SWITCH_KEY_RE.match(key).group(1)))
+    return keys or ["switch:0"]  # Fall back to the single-outlet default.
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    """Set up the light platform using configuration entry details."""
+    """Set up the light platform using configuration entry details.
+
+    Creates one LED entity per outlet. Single-outlet devices (Shelly Plug S)
+    keep the original "LED Ring" name/unique_id; multi-outlet devices (Shelly
+    Power Strip) get one "LED Outlet N" entity per switch channel.
+    """
     data = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([
-        ShellyPlugLedRing(
-            coordinator=data["coordinator"],
-            client=data["client"],
-            host=data["host"],
-            entry_id=entry.entry_id,
-            identifiers=entry.data.get("identifiers", [])
+    coordinator = data["coordinator"]
+    switch_keys = _discover_switch_keys(coordinator.data)
+    multi = len(switch_keys) > 1
+
+    entities = []
+    for switch_key in switch_keys:
+        index = int(_SWITCH_KEY_RE.match(switch_key).group(1))
+        if multi:
+            name = f"LED Outlet {index + 1}"
+            unique_suffix = f"led_{switch_key.replace(':', '_')}"
+        else:
+            # Keep the original name/unique_id so existing single-outlet
+            # installs don't get a new entity_id after an update.
+            name = "LED Ring"
+            unique_suffix = "led_ring"
+
+        entities.append(
+            ShellyPlugLedRing(
+                coordinator=coordinator,
+                client=data["client"],
+                host=data["host"],
+                entry_id=entry.entry_id,
+                identifiers=entry.data.get("identifiers", []),
+                switch_key=switch_key,
+                name=name,
+                unique_suffix=unique_suffix,
+            )
         )
-    ])
+    async_add_entities(entities)
 
 class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
-    """Representation of the Shelly Plug LED Ring with Optimistic State Management."""
+    """Representation of a single Shelly LED (ring, or one outlet's indicator) with Optimistic State Management."""
 
     _attr_has_entity_name = True
     _attr_color_mode = ColorMode.RGB
     _attr_supported_color_modes = {ColorMode.RGB}
 
-    def __init__(self, coordinator, client, host, entry_id, identifiers):
+    def __init__(
+        self,
+        coordinator,
+        client,
+        host,
+        entry_id,
+        identifiers,
+        switch_key: str = "switch:0",
+        name: str = "LED Ring",
+        unique_suffix: str = "led_ring",
+    ):
         super().__init__(coordinator)
         self._client = client
         self._host = host
-        self._attr_unique_id = f"{entry_id}_led_ring"
-        self._attr_name = "LED Ring"
+        self._switch_key = switch_key
+        self._attr_unique_id = f"{entry_id}_{unique_suffix}"
+        self._attr_name = name
         self._identifiers = identifiers
         self._attr_icon = "mdi:led-on"
 
@@ -60,6 +111,14 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
 
     @property
     def is_on(self) -> bool:
+        """Whether this LED's subsystem is in "switch" mode.
+
+        Note: on multi-outlet devices (e.g. Shelly Power Strip) ``mode`` is a
+        single firmware-wide setting shared by all outlets - turning any one
+        outlet's LED off disables "switch" mode for the whole device. Only
+        the RGB color/brightness below is independently addressable per
+        outlet.
+        """
         if self._optimistic_is_on is not None:
             return self._optimistic_is_on
         return self.led_config.get("mode") == "switch"
@@ -68,14 +127,14 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
     def brightness(self) -> int:
         if self._optimistic_brightness is not None:
             return self._optimistic_brightness
-        b = self.led_config.get("colors", {}).get("switch:0", {}).get("on", {}).get("brightness", 100)
+        b = self.led_config.get("colors", {}).get(self._switch_key, {}).get("on", {}).get("brightness", 100)
         return round((b / 100) * 255)
 
     @property
     def rgb_color(self) -> tuple[int, int, int]:
         if self._optimistic_rgb is not None:
             return self._optimistic_rgb
-        rgb = self.led_config.get("colors", {}).get("switch:0", {}).get("on", {}).get("rgb", [100, 100, 100])
+        rgb = self.led_config.get("colors", {}).get(self._switch_key, {}).get("on", {}).get("rgb", [100, 100, 100])
         return (round((rgb[0]/100)*255), round((rgb[1]/100)*255), round((rgb[2]/100)*255))
 
     @callback
@@ -118,7 +177,7 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
                 "leds": {
                     "mode": "switch",
                     "colors": {
-                        "switch:0": {
+                        self._switch_key: {
                             "on": {"rgb": [r, g, b], "brightness": pct_b},
                             "off": {"rgb": [r, g, b], "brightness": pct_b}
                         }

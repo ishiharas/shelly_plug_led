@@ -23,11 +23,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     ])
 
 class ShellyPlugLedResetButton(CoordinatorEntity, ButtonEntity):
-    """Button to reset the Shelly Plug LED Ring back to its out-of-the-box factory configuration."""
+    """Button to reset the Shelly LED(s) back to their out-of-the-box factory configuration.
+
+    LED mode is a single firmware-wide setting (see ShellyPlugLedRing.is_on),
+    so one button resets all outlets on multi-outlet devices too.
+    """
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_name = "Reset LED Ring to Default"
+    _attr_name = "Reset LEDs to Default"
     _attr_icon = "mdi:restore"
 
     def __init__(self, coordinator, client, host, entry_id, identifiers):
