@@ -1,11 +1,11 @@
 {
   "domain": "shelly_plug_led",
   "name": "Shelly Plug LED Ring",
-  "codeowners": ["@radioactive-bbs", "@ishiharas"],
+  "codeowners": ["@ishiharas", "@radioactive-bbs"],
   "config_flow": true,
-  "documentation": "https://github.com/radioactive-bbs/shelly_plug_led",
+  "documentation": "https://github.com/ishiharas/shelly_plug_led",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/radioactive-bbs/shelly_plug_led/issues",
+  "issue_tracker": "https://github.com/ishiharas/shelly_plug_led/issues",
   "requirements": [],
   "version": "1.5.0"
 }

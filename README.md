@@ -1,12 +1,10 @@
 # Shelly Plug LED Ring Integration for Home Assistant
 
 <p align="right">
-  <a href="https://github.com/radioactive-bbs/shelly_plug_led"><img src="https://img.shields.io/badge/GitHub-radioactive--bbs%2Fshelly__plug__led-181717?logo=github&logoColor=white" alt="GitHub repository"></a>
-  <a href="https://github.com/radioactive-bbs/shelly_plug_led/releases"><img src="https://img.shields.io/github/v/release/radioactive-bbs/shelly_plug_led?label=release" alt="Latest release"></a>
-  <a href="https://github.com/radioactive-bbs/shelly_plug_led/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
+  <a href="https://github.com/ishiharas/shelly_plug_led"><img src="https://img.shields.io/badge/GitHub-ishiharas%2Fshelly__plug__led-181717?logo=github&logoColor=white" alt="GitHub repository"></a>
+  <a href="https://github.com/ishiharas/shelly_plug_led/releases"><img src="https://img.shields.io/github/v/release/ishiharas/shelly_plug_led?label=release" alt="Latest release"></a>
+  <a href="https://github.com/ishiharas/shelly_plug_led/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
 </p>
-
-> This is a fork of the original **[shelly_plug_led](https://github.com/ishiharas/shelly_plug_led)** by **[@ishiharas](https://github.com/ishiharas)** — all credit for the original design and implementation goes to them. This fork adds **Shelly Power Strip (Gen4)** support, independent on/off color control, and a number of reliability fixes on top of it.
 
 A custom Home Assistant integration that turns the built-in RGB LED(s) of your **Shelly Plug S (Gen2 / Gen3)** or **Shelly Power Strip (Gen4)** devices into independent, fully controllable smart light entities — **without affecting the operational on/off power state of the actual smart plug/outlet relay(s)**.
 
@@ -46,13 +44,12 @@ Any device must already be set up and reachable through the **official built-in 
 
 ### Method 1: Via HACS (recommended)
 1. Open **HACS** in your Home Assistant sidebar.
-2. Click the three dots `...` in the top-right corner and select **Custom repositories**.
-3. Add `https://github.com/radioactive-bbs/shelly_plug_led` as the repository URL, with category **Integration**.
-4. Find **Shelly Plug LED Ring** in the HACS interface and click **Download**.
-5. **Restart Home Assistant Core** to load it.
+2. Search for **Shelly Plug LED Ring** in the HACS interface and click **Download**.
+   - If it doesn't show up (e.g. on an older HACS version), add it manually first: three dots `...` → **Custom repositories** → `https://github.com/ishiharas/shelly_plug_led`, category **Integration**.
+3. **Restart Home Assistant Core** to load it.
 
 ### Method 2: Manual installation
-1. Download the [latest release](https://github.com/radioactive-bbs/shelly_plug_led/releases) source archive (or clone the repo).
+1. Download the [latest release](https://github.com/ishiharas/shelly_plug_led/releases) source archive (or clone the repo).
 2. Copy the `custom_components/shelly_plug_led` folder into your Home Assistant `config/custom_components/` directory.
 3. **Restart Home Assistant Core**.
 
@@ -112,7 +109,7 @@ The LED **mode** (off / power-tracking / switch) is also a single firmware-wide 
 
 ## Credits
 
-Originally created by **[@ishiharas](https://github.com/ishiharas)** — see the upstream project at [ishiharas/shelly_plug_led](https://github.com/ishiharas/shelly_plug_led). This fork ([@radioactive-bbs](https://github.com/radioactive-bbs)) builds on that work to add Shelly Power Strip (Gen4) support, independent on/off color entities, and several reliability/security hardening fixes. See [Releases](https://github.com/radioactive-bbs/shelly_plug_led/releases) for the full change history.
+Created by **[@ishiharas](https://github.com/ishiharas)**. Shelly Power Strip (Gen4) support, independent on/off color entities, and several reliability/security hardening fixes contributed by **[@radioactive-bbs](https://github.com/radioactive-bbs)**. See [Releases](https://github.com/ishiharas/shelly_plug_led/releases) for the full change history.
 
 ## License
 
