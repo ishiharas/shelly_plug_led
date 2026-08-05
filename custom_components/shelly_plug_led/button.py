@@ -1,11 +1,16 @@
+import logging
+
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import ShellyAuthError
+
+_LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "shelly_plug_led"
 
@@ -23,11 +28,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     ])
 
 class ShellyPlugLedResetButton(CoordinatorEntity, ButtonEntity):
-    """Button to reset the Shelly Plug LED Ring back to its out-of-the-box factory configuration."""
+    """Button to reset the Shelly LED(s) back to their out-of-the-box factory configuration.
+
+    LED mode is a single firmware-wide setting (see ShellyPlugLedRing.is_on),
+    so one button resets all outlets on multi-outlet devices too.
+    """
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_name = "Reset LED Ring to Default"
+    _attr_name = "Reset LEDs to Default"
     _attr_icon = "mdi:restore"
 
     def __init__(self, coordinator, client, host, entry_id, identifiers):
@@ -45,12 +54,18 @@ class ShellyPlugLedResetButton(CoordinatorEntity, ButtonEntity):
         return None
 
     async def async_press(self) -> None:
-        """Handle the button press to revert the LED ring mode back to power tracking."""
+        """Handle the button press to revert the LED mode back to power tracking."""
         try:
             await self._client.set_config({"leds": {"mode": "power"}})
-        except ShellyAuthError:
-            pass  # Coordinator's next poll will surface the reauth flow.
-        except Exception:
-            pass
+        except ShellyAuthError as err:
+            # Let the coordinator surface the reauth flow, but still fail the
+            # press visibly rather than silently pretending it worked.
+            await self.coordinator.async_request_refresh()
+            raise HomeAssistantError(
+                f"Shelly device at {self._host} rejected the request - re-authentication needed"
+            ) from err
+        except Exception as err:
+            _LOGGER.error("Error resetting Shelly LED at %s: %s", self._host, err)
+            raise HomeAssistantError(f"Failed to reset Shelly LED at {self._host}: {err}") from err
 
         await self.coordinator.async_request_refresh()

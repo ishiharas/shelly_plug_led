@@ -26,6 +26,13 @@ SHELLY_DOMAIN = "shelly"
 DEFAULT_USERNAME = "admin"
 TIMEOUT = 5
 
+# RPC components that expose LED configuration, tried in this order until one
+# answers. ``PLUGS_UI`` covers single-outlet devices (Shelly Plug S Gen2/Gen3,
+# ...); ``POWERSTRIP_UI`` covers multi-outlet devices (Shelly Power Strip
+# Gen4, with switch:0..switch:3). Both share the same ``leds.colors`` /
+# ``leds.mode`` config shape, just keyed by a different set of RPC methods.
+LED_UI_COMPONENTS = ("PLUGS_UI", "POWERSTRIP_UI")
+
 
 class ShellyAuthError(Exception):
     """Raised when the device requires auth we cannot satisfy (401, no/invalid creds)."""
@@ -33,6 +40,20 @@ class ShellyAuthError(Exception):
 
 def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _sanitize_challenge_value(value: str) -> str:
+    """Strip characters that could break out of a quoted Digest header value.
+
+    ``realm``/``nonce``/``opaque`` come verbatim from the device's
+    WWW-Authenticate response and are interpolated into our own outgoing
+    Authorization header as quoted strings - an embedded ``"`` (or a stray
+    CR/LF) would corrupt that header's structure. The only party able to
+    supply a malicious challenge here already has full visibility of this
+    same connection (the device itself, or a LAN MITM), so this is
+    defense-in-depth rather than a fix for a reachable exploit.
+    """
+    return value.replace('"', "").replace("\r", "").replace("\n", "")
 
 
 def _parse_challenge(header: str) -> dict[str, str]:
@@ -81,6 +102,7 @@ class ShellyRpcClient:
         self._username = username or DEFAULT_USERNAME
         self._password = password
         self._url = f"http://{host}/rpc"
+        self._ui_component: str | None = None
 
     def set_credentials(self, username: str | None, password: str | None) -> None:
         """Update credentials at runtime without rebuilding the client."""
@@ -89,9 +111,9 @@ class ShellyRpcClient:
 
     def _build_digest_header(self, www_auth: str, method: str, uri: str) -> str:
         params = _parse_challenge(www_auth)
-        realm = params.get("realm", "")
-        nonce = params.get("nonce", "")
-        qop = params.get("qop", "auth")
+        realm = _sanitize_challenge_value(params.get("realm", ""))
+        nonce = _sanitize_challenge_value(params.get("nonce", ""))
+        qop = _sanitize_challenge_value(params.get("qop", "auth"))
         cnonce = secrets.token_hex(8)
         nc = "00000001"
 
@@ -111,7 +133,7 @@ class ShellyRpcClient:
             f'cnonce="{cnonce}"',
         ]
         if "opaque" in params:
-            parts.append(f'opaque="{params["opaque"]}"')
+            parts.append(f'opaque="{_sanitize_challenge_value(params["opaque"])}"')
         return "Digest " + ", ".join(parts)
 
     async def _handle(self, res: aiohttp.ClientResponse) -> dict:
@@ -152,10 +174,35 @@ class ShellyRpcClient:
             return await self._handle(res)
 
     async def get_config(self) -> dict:
-        return await self.call("PLUGS_UI.GetConfig")
+        """Fetch the LED config, auto-detecting which RPC component the device exposes.
+
+        Verified against real hardware: a device answers exactly one of
+        LED_UI_COMPONENTS (PLUGS_UI on a Plug S, POWERSTRIP_UI on a Power
+        Strip Gen4) and 404s outright on the other, so first-success-wins is
+        sufficient - no need to probe every component and compare results.
+        The winner is cached, so later calls (and set_config) skip probing.
+        """
+        if self._ui_component:
+            return await self.call(f"{self._ui_component}.GetConfig")
+
+        last_err: Exception | None = None
+        for component in LED_UI_COMPONENTS:
+            try:
+                result = await self.call(f"{component}.GetConfig")
+            except ShellyAuthError:
+                raise  # Conclusive - not a "wrong component" signal.
+            except Exception as err:  # noqa: BLE001 - probing; any failure means "try next"
+                last_err = err
+                continue
+            self._ui_component = component
+            return result
+
+        raise last_err or RuntimeError("Device exposes no supported LED UI component")
 
     async def set_config(self, config: dict) -> dict:
-        return await self.call("PLUGS_UI.SetConfig", {"config": config})
+        if not self._ui_component:
+            await self.get_config()  # Probe for the right component first.
+        return await self.call(f"{self._ui_component}.SetConfig", {"config": config})
 
 
 def find_shelly_entry(hass, host: str):

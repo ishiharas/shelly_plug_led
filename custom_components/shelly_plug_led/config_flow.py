@@ -4,7 +4,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import ShellyAuthError, ShellyRpcClient, get_shelly_credentials
+from .api import SHELLY_DOMAIN, ShellyAuthError, ShellyRpcClient, get_shelly_credentials
 
 DOMAIN = "shelly_plug_led"
 
@@ -28,7 +28,7 @@ class ShellyPlugLedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
         
         # Pull all active configuration entries matching the official Shelly domain
-        shelly_entries = self.hass.config_entries.async_entries("shelly")
+        shelly_entries = self.hass.config_entries.async_entries(SHELLY_DOMAIN)
         
         devices = {}
         for entry in shelly_entries:
@@ -39,12 +39,34 @@ class ShellyPlugLedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             entry_devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
             if not entry_devices:
                 continue
-                
-            device = entry_devices[0]
-            
-            # Filter: Only show devices that contain "plug" in their model type
-            model = device.model or ""
-            if "plug" not in model.lower():
+
+            # The official Shelly integration can register more than one
+            # device per config entry: on newer multi-outlet devices (e.g.
+            # Power Strip Gen4) it splits into one physical "root" device
+            # (bare "shelly:<mac>" identifier, carries the shared LED
+            # config) plus one child device per output ("shelly:<mac>-switch:N",
+            # carries that output's own model/energy sensors). Picking
+            # entry_devices[0] blindly is not safe - registry order isn't
+            # guaranteed, and it can land on a child or a root device with
+            # no model string. Prefer the root device explicitly; fall back
+            # to whatever's there for older/simpler single-device setups.
+            root_devices = [
+                d for d in entry_devices
+                if not any(
+                    len(ident) == 2 and ident[0] == SHELLY_DOMAIN and "-switch:" in ident[1]
+                    for ident in d.identifiers
+                )
+            ]
+            device = root_devices[0] if root_devices else entry_devices[0]
+
+            # Filter: only show devices whose LED subsystem we know how to
+            # drive - single-outlet plugs (PLUGS_UI) and multi-outlet power
+            # strips (POWERSTRIP_UI, e.g. "Shelly Power Strip 4 Gen4"). The
+            # root device may not carry a model string itself (see above) -
+            # fall back to checking its sibling devices for one.
+            model = device.model or next((d.model for d in entry_devices if d.model), "") or ""
+            model_lower = model.lower()
+            if not any(keyword in model_lower for keyword in ("plug", "power strip", "powerstrip")):
                 continue
                 
             # Discover which room the plug is currently assigned to

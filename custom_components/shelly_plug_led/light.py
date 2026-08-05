@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from typing import Any
 
 from homeassistant.components.light import ColorMode, LightEntity
@@ -13,38 +14,117 @@ from .api import ShellyAuthError
 DOMAIN = "shelly_plug_led"
 _LOGGER = logging.getLogger(__name__)
 
+# Matches the per-outlet keys Shelly uses inside ``leds.colors``
+# (e.g. "switch:0" .. "switch:3" on a Power Strip). Other keys such as
+# "power" (the power-tracking-mode brightness) are ignored.
+_SWITCH_KEY_RE = re.compile(r"^switch:(\d+)$")
+
+
+def _discover_switch_keys(coordinator_data: dict | None) -> list[str]:
+    """Return the sorted ``switch:N`` keys present in the LED color config."""
+    colors = (coordinator_data or {}).get("leds", {}).get("colors", {})
+    keys = [key for key in colors if _SWITCH_KEY_RE.match(key)]
+    keys.sort(key=lambda key: int(_SWITCH_KEY_RE.match(key).group(1)))
+    return keys or ["switch:0"]  # Fall back to the single-outlet default.
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    """Set up the light platform using configuration entry details."""
+    """Set up the light platform using configuration entry details.
+
+    Creates two LED entities per outlet: one for the "on" color, one for the
+    "off" color - matching the device's native switch-mode LED, which shows a
+    different color depending on that outlet's own relay state. Single-outlet
+    devices (Shelly Plug S) keep the original "LED Ring" name/unique_id for
+    the on-color entity; multi-outlet devices (Shelly Power Strip) get one
+    "LED Outlet N" pair per switch channel.
+    """
     data = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([
-        ShellyPlugLedRing(
-            coordinator=data["coordinator"],
-            client=data["client"],
-            host=data["host"],
-            entry_id=entry.entry_id,
-            identifiers=entry.data.get("identifiers", [])
+    coordinator = data["coordinator"]
+    switch_keys = _discover_switch_keys(coordinator.data)
+    multi = len(switch_keys) > 1
+
+    entities = []
+    for switch_key in switch_keys:
+        index = int(_SWITCH_KEY_RE.match(switch_key).group(1))
+        if multi:
+            ring_label = f"LED Outlet {index + 1}"
+            base_suffix = f"led_{switch_key.replace(':', '_')}"
+        else:
+            # Keep the original unique_id so existing single-outlet installs
+            # don't get a new entity_id after an update (display name is
+            # independent of unique_id, so renaming it below is safe).
+            ring_label = "LED Ring"
+            base_suffix = "led_ring"
+
+        entities.append(
+            ShellyPlugLedRing(
+                coordinator=coordinator,
+                client=data["client"],
+                host=data["host"],
+                entry_id=entry.entry_id,
+                identifiers=entry.data.get("identifiers", []),
+                switch_key=switch_key,
+                color_key="on",
+                name=f"{ring_label} On Color",
+                unique_suffix=base_suffix,
+            )
         )
-    ])
+        entities.append(
+            ShellyPlugLedRing(
+                coordinator=coordinator,
+                client=data["client"],
+                host=data["host"],
+                entry_id=entry.entry_id,
+                identifiers=entry.data.get("identifiers", []),
+                switch_key=switch_key,
+                color_key="off",
+                name=f"{ring_label} Off Color",
+                unique_suffix=f"{base_suffix}_off",
+            )
+        )
+    async_add_entities(entities)
 
 class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
-    """Representation of the Shelly Plug LED Ring with Optimistic State Management."""
+    """Representation of one color slot of a Shelly LED, with Optimistic State Management.
+
+    The device's native "switch" LED mode holds two colors per outlet - one
+    shown while the outlet's relay is on, one while it's off - so each
+    outlet gets two of these entities (``color_key="on"`` / ``"off"``), each
+    writing only its own slot. This lets e.g. red-when-on/green-when-off be
+    configured entirely in firmware: once set, the LED tracks that outlet's
+    own relay state with no HA automation involved.
+    """
 
     _attr_has_entity_name = True
     _attr_color_mode = ColorMode.RGB
     _attr_supported_color_modes = {ColorMode.RGB}
 
-    def __init__(self, coordinator, client, host, entry_id, identifiers):
+    def __init__(
+        self,
+        coordinator,
+        client,
+        host,
+        entry_id,
+        identifiers,
+        switch_key: str = "switch:0",
+        color_key: str = "on",
+        name: str = "LED Ring On Color",
+        unique_suffix: str = "led_ring",
+    ):
         super().__init__(coordinator)
         self._client = client
         self._host = host
-        self._attr_unique_id = f"{entry_id}_led_ring"
-        self._attr_name = "LED Ring"
+        self._switch_key = switch_key
+        self._color_key = color_key  # "on" or "off" - which color slot this entity writes.
+        self._attr_unique_id = f"{entry_id}_{unique_suffix}"
+        self._attr_name = name
         self._identifiers = identifiers
-        self._attr_icon = "mdi:led-on"
+        self._attr_icon = "mdi:led-on" if color_key == "on" else "mdi:led-variant-outline"
 
         self._optimistic_is_on = None
         self._optimistic_brightness = None
         self._optimistic_rgb = None
+        self._pending_writes = 0
 
     @property
     def device_info(self):
@@ -60,48 +140,88 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
 
     @property
     def is_on(self) -> bool:
+        """Whether this specific color slot is active: switch-mode engaged AND its own brightness > 0.
+
+        Each on/off color entity is independently switchable: turning one
+        off just dims its own slot to 0 brightness, leaving the sibling
+        entity (and the device's shared ``mode``) untouched. ``mode`` itself
+        is only ever engaged ("switch") by turning an entity *on* - never
+        forced to "off" by turning one off - so the two never fight over a
+        shared on/off state the way a single "whole subsystem" toggle would.
+        """
         if self._optimistic_is_on is not None:
             return self._optimistic_is_on
-        return self.led_config.get("mode") == "switch"
+        if self.led_config.get("mode") != "switch":
+            return False
+        b = self.led_config.get("colors", {}).get(self._switch_key, {}).get(self._color_key, {}).get("brightness", 0)
+        return b > 0
 
     @property
     def brightness(self) -> int:
         if self._optimistic_brightness is not None:
             return self._optimistic_brightness
-        b = self.led_config.get("colors", {}).get("switch:0", {}).get("on", {}).get("brightness", 100)
+        b = self.led_config.get("colors", {}).get(self._switch_key, {}).get(self._color_key, {}).get("brightness", 100)
         return round((b / 100) * 255)
 
     @property
     def rgb_color(self) -> tuple[int, int, int]:
         if self._optimistic_rgb is not None:
             return self._optimistic_rgb
-        rgb = self.led_config.get("colors", {}).get("switch:0", {}).get("on", {}).get("rgb", [100, 100, 100])
+        rgb = self.led_config.get("colors", {}).get(self._switch_key, {}).get(self._color_key, {}).get("rgb", [100, 100, 100])
         return (round((rgb[0]/100)*255), round((rgb[1]/100)*255), round((rgb[2]/100)*255))
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Clear optimistic state overrides once the coordinator refreshes successfully."""
-        self._optimistic_is_on = None
-        self._optimistic_brightness = None
-        self._optimistic_rgb = None
+        """Clear optimistic state overrides once this entity's own writes have all settled.
+
+        The on-color and off-color entities for one LED share a single
+        coordinator, so a refresh triggered by the *sibling* entity's write
+        also fires here. Only clear our optimistic values when we have no
+        write of our own still in flight (``_pending_writes == 0``) -
+        otherwise a sibling's refresh landing mid-write would wipe our
+        just-set optimistic state and flicker the UI back to the stale
+        pre-write value until our own write's refresh arrives.
+        """
+        if self._pending_writes == 0:
+            self._optimistic_is_on = None
+            self._optimistic_brightness = None
+            self._optimistic_rgb = None
         super()._handle_coordinator_update()
 
     async def _send_rpc(self, payload: dict):
+        self._pending_writes += 1
         try:
-            await self._client.set_config(payload["config"])
-        except ShellyAuthError:
-            # Let the coordinator surface the reauth flow on its next poll.
-            await self.coordinator.async_request_refresh()
-            return
-        except Exception as err:
-            _LOGGER.error("Error communicating with Shelly LED Ring at %s: %s", self._host, err)
+            try:
+                await self._client.set_config(payload["config"])
+            except ShellyAuthError:
+                # Let the coordinator surface the reauth flow on its next poll.
+                await self.coordinator.async_request_refresh()
+                return
+            except Exception as err:
+                _LOGGER.error("Error communicating with Shelly LED Ring at %s: %s", self._host, err)
 
-        await asyncio.sleep(1.5)
-        await self.coordinator.async_request_refresh()
+            await asyncio.sleep(1.5)
+            await self.coordinator.async_request_refresh()
+        finally:
+            self._pending_writes -= 1
+            if self._pending_writes == 0:
+                # Our last in-flight write has settled - clear optimistic
+                # overrides now rather than waiting for the next unrelated
+                # coordinator refresh to happen to come along.
+                self._optimistic_is_on = None
+                self._optimistic_brightness = None
+                self._optimistic_rgb = None
+                self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         rgb = kwargs.get("rgb_color", self.rgb_color)
-        brightness = kwargs.get("brightness", self.brightness)
+        brightness = kwargs.get("brightness")
+        if brightness is None:
+            # Falling back to self.brightness would preserve 0 (this slot
+            # was just off), which is_on would immediately read back as
+            # "off" - default to full brightness instead, like a normal
+            # light turning on without an explicit level.
+            brightness = self.brightness or 255
 
         self._optimistic_is_on = True
         self._optimistic_rgb = rgb
@@ -118,9 +238,8 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
                 "leds": {
                     "mode": "switch",
                     "colors": {
-                        "switch:0": {
-                            "on": {"rgb": [r, g, b], "brightness": pct_b},
-                            "off": {"rgb": [r, g, b], "brightness": pct_b}
+                        self._switch_key: {
+                            self._color_key: {"rgb": [r, g, b], "brightness": pct_b}
                         }
                     }
                 }
@@ -129,8 +248,20 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
         await self._send_rpc(payload)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        """Dim this color slot to 0 brightness - leaves ``mode`` and the sibling slot untouched."""
         self._optimistic_is_on = False
+        self._optimistic_brightness = 0
         self.async_write_ha_state()
 
-        payload = {"config": {"leds": {"mode": "off"}}}
+        payload = {
+            "config": {
+                "leds": {
+                    "colors": {
+                        self._switch_key: {
+                            self._color_key: {"brightness": 0}
+                        }
+                    }
+                }
+            }
+        }
         await self._send_rpc(payload)
