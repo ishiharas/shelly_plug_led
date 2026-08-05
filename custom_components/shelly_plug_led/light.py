@@ -47,12 +47,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     for switch_key in switch_keys:
         index = int(_SWITCH_KEY_RE.match(switch_key).group(1))
         if multi:
-            base_name = f"LED Outlet {index + 1}"
+            ring_label = f"LED Outlet {index + 1}"
             base_suffix = f"led_{switch_key.replace(':', '_')}"
         else:
-            # Keep the original name/unique_id so existing single-outlet
-            # installs don't get a new entity_id after an update.
-            base_name = "LED Ring"
+            # Keep the original unique_id so existing single-outlet installs
+            # don't get a new entity_id after an update (display name is
+            # independent of unique_id, so renaming it below is safe).
+            ring_label = "LED Ring"
             base_suffix = "led_ring"
 
         entities.append(
@@ -64,7 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 identifiers=entry.data.get("identifiers", []),
                 switch_key=switch_key,
                 color_key="on",
-                name=base_name,
+                name=f"{ring_label} On Color",
                 unique_suffix=base_suffix,
             )
         )
@@ -77,7 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 identifiers=entry.data.get("identifiers", []),
                 switch_key=switch_key,
                 color_key="off",
-                name=f"{base_name} Off Color",
+                name=f"{ring_label} Off Color",
                 unique_suffix=f"{base_suffix}_off",
             )
         )
@@ -107,7 +108,7 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
         identifiers,
         switch_key: str = "switch:0",
         color_key: str = "on",
-        name: str = "LED Ring",
+        name: str = "LED Ring On Color",
         unique_suffix: str = "led_ring",
     ):
         super().__init__(coordinator)
