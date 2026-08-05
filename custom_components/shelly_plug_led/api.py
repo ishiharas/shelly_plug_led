@@ -42,6 +42,20 @@ def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def _sanitize_challenge_value(value: str) -> str:
+    """Strip characters that could break out of a quoted Digest header value.
+
+    ``realm``/``nonce``/``opaque`` come verbatim from the device's
+    WWW-Authenticate response and are interpolated into our own outgoing
+    Authorization header as quoted strings - an embedded ``"`` (or a stray
+    CR/LF) would corrupt that header's structure. The only party able to
+    supply a malicious challenge here already has full visibility of this
+    same connection (the device itself, or a LAN MITM), so this is
+    defense-in-depth rather than a fix for a reachable exploit.
+    """
+    return value.replace('"', "").replace("\r", "").replace("\n", "")
+
+
 def _parse_challenge(header: str) -> dict[str, str]:
     """Parse a ``WWW-Authenticate: Digest ...`` header into a dict of params."""
     header = header.strip()
@@ -97,9 +111,9 @@ class ShellyRpcClient:
 
     def _build_digest_header(self, www_auth: str, method: str, uri: str) -> str:
         params = _parse_challenge(www_auth)
-        realm = params.get("realm", "")
-        nonce = params.get("nonce", "")
-        qop = params.get("qop", "auth")
+        realm = _sanitize_challenge_value(params.get("realm", ""))
+        nonce = _sanitize_challenge_value(params.get("nonce", ""))
+        qop = _sanitize_challenge_value(params.get("qop", "auth"))
         cnonce = secrets.token_hex(8)
         nc = "00000001"
 
@@ -119,7 +133,7 @@ class ShellyRpcClient:
             f'cnonce="{cnonce}"',
         ]
         if "opaque" in params:
-            parts.append(f'opaque="{params["opaque"]}"')
+            parts.append(f'opaque="{_sanitize_challenge_value(params["opaque"])}"')
         return "Digest " + ", ".join(parts)
 
     async def _handle(self, res: aiohttp.ClientResponse) -> dict:
@@ -159,27 +173,18 @@ class ShellyRpcClient:
                 )
             return await self._handle(res)
 
-    @staticmethod
-    def _switch_count(result: dict) -> int:
-        """Count switch:N keys in a GetConfig result's leds.colors."""
-        colors = result.get("leds", {}).get("colors", {})
-        return sum(1 for key in colors if key.startswith("switch:"))
-
     async def get_config(self) -> dict:
         """Fetch the LED config, auto-detecting which RPC component the device exposes.
 
-        Some devices (e.g. Power Strip Gen4) answer *both* PLUGS_UI and
-        POWERSTRIP_UI - PLUGS_UI apparently as a single-outlet compatibility
-        shim that only reports switch:0. Stopping at the first successful
-        component would silently lock onto that shim on a multi-outlet
-        device, so every component is probed and the one whose config
-        reports the most outlets (switch:N keys) is kept. The winner is
-        cached, so this only costs the extra round-trip once.
+        Verified against real hardware: a device answers exactly one of
+        LED_UI_COMPONENTS (PLUGS_UI on a Plug S, POWERSTRIP_UI on a Power
+        Strip Gen4) and 404s outright on the other, so first-success-wins is
+        sufficient - no need to probe every component and compare results.
+        The winner is cached, so later calls (and set_config) skip probing.
         """
         if self._ui_component:
             return await self.call(f"{self._ui_component}.GetConfig")
 
-        candidates: list[tuple[str, dict]] = []
         last_err: Exception | None = None
         for component in LED_UI_COMPONENTS:
             try:
@@ -189,14 +194,10 @@ class ShellyRpcClient:
             except Exception as err:  # noqa: BLE001 - probing; any failure means "try next"
                 last_err = err
                 continue
-            candidates.append((component, result))
+            self._ui_component = component
+            return result
 
-        if not candidates:
-            raise last_err or RuntimeError("Device exposes no supported LED UI component")
-
-        component, result = max(candidates, key=lambda item: self._switch_count(item[1]))
-        self._ui_component = component
-        return result
+        raise last_err or RuntimeError("Device exposes no supported LED UI component")
 
     async def set_config(self, config: dict) -> dict:
         if not self._ui_component:

@@ -1,11 +1,16 @@
+import logging
+
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import ShellyAuthError
+
+_LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "shelly_plug_led"
 
@@ -49,12 +54,18 @@ class ShellyPlugLedResetButton(CoordinatorEntity, ButtonEntity):
         return None
 
     async def async_press(self) -> None:
-        """Handle the button press to revert the LED ring mode back to power tracking."""
+        """Handle the button press to revert the LED mode back to power tracking."""
         try:
             await self._client.set_config({"leds": {"mode": "power"}})
-        except ShellyAuthError:
-            pass  # Coordinator's next poll will surface the reauth flow.
-        except Exception:
-            pass
+        except ShellyAuthError as err:
+            # Let the coordinator surface the reauth flow, but still fail the
+            # press visibly rather than silently pretending it worked.
+            await self.coordinator.async_request_refresh()
+            raise HomeAssistantError(
+                f"Shelly device at {self._host} rejected the request - re-authentication needed"
+            ) from err
+        except Exception as err:
+            _LOGGER.error("Error resetting Shelly LED at %s: %s", self._host, err)
+            raise HomeAssistantError(f"Failed to reset Shelly LED at {self._host}: {err}") from err
 
         await self.coordinator.async_request_refresh()

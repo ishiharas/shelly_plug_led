@@ -124,6 +124,7 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
         self._optimistic_is_on = None
         self._optimistic_brightness = None
         self._optimistic_rgb = None
+        self._pending_writes = 0
 
     @property
     def device_info(self):
@@ -171,24 +172,46 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Clear optimistic state overrides once the coordinator refreshes successfully."""
-        self._optimistic_is_on = None
-        self._optimistic_brightness = None
-        self._optimistic_rgb = None
+        """Clear optimistic state overrides once this entity's own writes have all settled.
+
+        The on-color and off-color entities for one LED share a single
+        coordinator, so a refresh triggered by the *sibling* entity's write
+        also fires here. Only clear our optimistic values when we have no
+        write of our own still in flight (``_pending_writes == 0``) -
+        otherwise a sibling's refresh landing mid-write would wipe our
+        just-set optimistic state and flicker the UI back to the stale
+        pre-write value until our own write's refresh arrives.
+        """
+        if self._pending_writes == 0:
+            self._optimistic_is_on = None
+            self._optimistic_brightness = None
+            self._optimistic_rgb = None
         super()._handle_coordinator_update()
 
     async def _send_rpc(self, payload: dict):
+        self._pending_writes += 1
         try:
-            await self._client.set_config(payload["config"])
-        except ShellyAuthError:
-            # Let the coordinator surface the reauth flow on its next poll.
-            await self.coordinator.async_request_refresh()
-            return
-        except Exception as err:
-            _LOGGER.error("Error communicating with Shelly LED Ring at %s: %s", self._host, err)
+            try:
+                await self._client.set_config(payload["config"])
+            except ShellyAuthError:
+                # Let the coordinator surface the reauth flow on its next poll.
+                await self.coordinator.async_request_refresh()
+                return
+            except Exception as err:
+                _LOGGER.error("Error communicating with Shelly LED Ring at %s: %s", self._host, err)
 
-        await asyncio.sleep(1.5)
-        await self.coordinator.async_request_refresh()
+            await asyncio.sleep(1.5)
+            await self.coordinator.async_request_refresh()
+        finally:
+            self._pending_writes -= 1
+            if self._pending_writes == 0:
+                # Our last in-flight write has settled - clear optimistic
+                # overrides now rather than waiting for the next unrelated
+                # coordinator refresh to happen to come along.
+                self._optimistic_is_on = None
+                self._optimistic_brightness = None
+                self._optimistic_rgb = None
+                self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         rgb = kwargs.get("rgb_color", self.rgb_color)
