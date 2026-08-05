@@ -139,17 +139,21 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
 
     @property
     def is_on(self) -> bool:
-        """Whether this LED's subsystem is in "switch" mode.
+        """Whether this specific color slot is active: switch-mode engaged AND its own brightness > 0.
 
-        Note: ``mode`` is a single firmware-wide setting shared by every
-        color-slot entity on the device (both on/off entities, and - on
-        multi-outlet devices - every outlet) - turning any one of them off
-        disables "switch" mode for the whole device. Only the RGB
-        color/brightness below is independently addressable per entity.
+        Each on/off color entity is independently switchable: turning one
+        off just dims its own slot to 0 brightness, leaving the sibling
+        entity (and the device's shared ``mode``) untouched. ``mode`` itself
+        is only ever engaged ("switch") by turning an entity *on* - never
+        forced to "off" by turning one off - so the two never fight over a
+        shared on/off state the way a single "whole subsystem" toggle would.
         """
         if self._optimistic_is_on is not None:
             return self._optimistic_is_on
-        return self.led_config.get("mode") == "switch"
+        if self.led_config.get("mode") != "switch":
+            return False
+        b = self.led_config.get("colors", {}).get(self._switch_key, {}).get(self._color_key, {}).get("brightness", 0)
+        return b > 0
 
     @property
     def brightness(self) -> int:
@@ -188,7 +192,13 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         rgb = kwargs.get("rgb_color", self.rgb_color)
-        brightness = kwargs.get("brightness", self.brightness)
+        brightness = kwargs.get("brightness")
+        if brightness is None:
+            # Falling back to self.brightness would preserve 0 (this slot
+            # was just off), which is_on would immediately read back as
+            # "off" - default to full brightness instead, like a normal
+            # light turning on without an explicit level.
+            brightness = self.brightness or 255
 
         self._optimistic_is_on = True
         self._optimistic_rgb = rgb
@@ -215,8 +225,20 @@ class ShellyPlugLedRing(CoordinatorEntity, LightEntity):
         await self._send_rpc(payload)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        """Dim this color slot to 0 brightness - leaves ``mode`` and the sibling slot untouched."""
         self._optimistic_is_on = False
+        self._optimistic_brightness = 0
         self.async_write_ha_state()
 
-        payload = {"config": {"leds": {"mode": "off"}}}
+        payload = {
+            "config": {
+                "leds": {
+                    "colors": {
+                        self._switch_key: {
+                            self._color_key: {"brightness": 0}
+                        }
+                    }
+                }
+            }
+        }
         await self._send_rpc(payload)
