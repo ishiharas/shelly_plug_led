@@ -159,15 +159,27 @@ class ShellyRpcClient:
                 )
             return await self._handle(res)
 
+    @staticmethod
+    def _switch_count(result: dict) -> int:
+        """Count switch:N keys in a GetConfig result's leds.colors."""
+        colors = result.get("leds", {}).get("colors", {})
+        return sum(1 for key in colors if key.startswith("switch:"))
+
     async def get_config(self) -> dict:
         """Fetch the LED config, auto-detecting which RPC component the device exposes.
 
-        Probes ``LED_UI_COMPONENTS`` in order the first time and remembers the
-        one that answered, so later calls (and ``set_config``) go straight to it.
+        Some devices (e.g. Power Strip Gen4) answer *both* PLUGS_UI and
+        POWERSTRIP_UI - PLUGS_UI apparently as a single-outlet compatibility
+        shim that only reports switch:0. Stopping at the first successful
+        component would silently lock onto that shim on a multi-outlet
+        device, so every component is probed and the one whose config
+        reports the most outlets (switch:N keys) is kept. The winner is
+        cached, so this only costs the extra round-trip once.
         """
         if self._ui_component:
             return await self.call(f"{self._ui_component}.GetConfig")
 
+        candidates: list[tuple[str, dict]] = []
         last_err: Exception | None = None
         for component in LED_UI_COMPONENTS:
             try:
@@ -177,9 +189,14 @@ class ShellyRpcClient:
             except Exception as err:  # noqa: BLE001 - probing; any failure means "try next"
                 last_err = err
                 continue
-            self._ui_component = component
-            return result
-        raise last_err or RuntimeError("Device exposes no supported LED UI component")
+            candidates.append((component, result))
+
+        if not candidates:
+            raise last_err or RuntimeError("Device exposes no supported LED UI component")
+
+        component, result = max(candidates, key=lambda item: self._switch_count(item[1]))
+        self._ui_component = component
+        return result
 
     async def set_config(self, config: dict) -> dict:
         if not self._ui_component:

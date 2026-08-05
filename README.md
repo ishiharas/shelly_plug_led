@@ -1,5 +1,11 @@
 # Shelly Plug LED Ring Integration for Home Assistant
 
+<p align="right">
+  <a href="https://github.com/radioactive-bbs/shelly_plug_led"><img src="https://img.shields.io/badge/GitHub-radioactive--bbs%2Fshelly__plug__led-181717?logo=github&logoColor=white" alt="GitHub repository"></a>
+</p>
+
+> This is a fork of the original **[shelly_plug_led](https://github.com/ishiharas/shelly_plug_led)** by **[@ishiharas](https://github.com/ishiharas)** — all credit for the original design and implementation goes to them. This fork adds **Shelly Power Strip (Gen4)** support on top of it.
+
 A custom Home Assistant integration that turns the built-in RGB LED(s) of your **Shelly Plug S (Gen2 / Gen3)** or **Shelly Power Strip (Gen4)** devices into independent, fully controllable smart light entities.
 
 This integration interacts with the LED configuration engine. It allows you to 
@@ -45,3 +51,9 @@ On a Power Strip, one `LED Outlet N` light entity is created per physical outlet
 1. In Home Assistant, navigate to **Settings > Devices & Services**.
 2. Click the **Add Integration** button in the bottom right corner.
 3. Search for **Shelly Plug LED Ring** and select it.
+
+---
+
+## Credits
+
+Originally created by **[@ishiharas](https://github.com/ishiharas)** — see the upstream project at [ishiharas/shelly_plug_led](https://github.com/ishiharas/shelly_plug_led). This fork ([@radioactive-bbs](https://github.com/radioactive-bbs)) builds on that work to add Shelly Power Strip (Gen4) multi-outlet support.
